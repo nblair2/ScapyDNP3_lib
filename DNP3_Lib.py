@@ -1,6 +1,5 @@
-__author__ = 'Nicholas Rodofile'
 from scapy.all import *
-import crcmod.predefined
+from crccheck.crc import Crc16Dnp
 
 '''
 # Copyright 2014-2016 N.R Rodofile
@@ -36,8 +35,9 @@ Initalise a predefined crc object for DNP3 Cyclic Redundancy Check
 Info : http://crcmod.sourceforge.net/crcmod.predefined.html
 '''
 def crcDNP(data):
-    crc16DNP = crcmod.predefined.mkCrcFun('crc-16-dnp')
-    return crc16DNP(data)
+    c = Crc16Dnp()
+    c.process(data)
+    return c.final().to_bytes(2, "little")
 
 
 def CRC_check(chunk, crc):
@@ -172,7 +172,7 @@ class DNP3ApplicationResponse(DNP3Application):
 
     def mysummary(self):
         if isinstance(self.underlayer.underlayer, DNP3):
-            print self.FUNC_CODE.SEQ, "Hello"
+            print(self.FUNC_CODE.SEQ, "Hello")
             return self.underlayer.underlayer.sprintf(DNP3_summary + Transport_summary + Application_Rsp_summary)
         if isinstance(self.underlayer, DNP3Transport):
             return self.underlayer.sprintf(Transport_summary + Application_Rsp_summary)
@@ -277,8 +277,8 @@ class DNP3(Packet):
 
     def show_data_chunks(self):
         for i in range(len(self.data_chunks)):
-            print "\tData Chunk", i, "Len", len(self.data_chunks[i]),\
-                "CRC (", hex(struct.unpack('<H', self.data_chunks_crc[i])[0]), ")"
+            print("\tData Chunk", i, "Len", len(self.data_chunks[i]),\
+                "CRC (", hex(struct.unpack('<H', self.data_chunks_crc[i])[0]), ")")
 
 
     def add_data_chunk(self, chunk):
