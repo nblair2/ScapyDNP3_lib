@@ -2,20 +2,14 @@ from scapy.all import *
 from crccheck.crc import Crc16Dnp
 
 '''
-# Copyright 2014-2016 N.R Rodofile
+## Copyright
 
-Licensed under the GPLv3.
-This program is free software: you can redistribute it and/or modify it under the terms 
-of the GNU General Public License as published by the Free Software Foundation, either 
-version 3 of the License, or (at your option) any later version.
-
-This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
-without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-See the GNU General Public License for more details. You should have received a copy of 
-the GNU General Public License along with this program. If not, see 
-http://www.gnu.org/licenses/.
+* updated 2024
+* original 2014-2016 N.R Rodofile
+* licensed under the GPLv3.
 '''
 
+# CONSTANTS for DNP3
 bitState = {1: "SET", 0: "UNSET"}
 stations = {1: "MASTER", 0: "OUTSTATION"}
 
@@ -29,44 +23,6 @@ Transport_summary = "Seq:%DNP3Transport.SEQUENCE% "
 Application_Rsp_summary = "Response %DNP3ApplicationResponse.FUNC_CODE% "
 Application_Req_summary = "Request %DNP3ApplicationRequest.FUNC_CODE% "
 DNP3_summary = "From %DNP3.SOURCE% to %DNP3.DESTINATION% "
-
-'''
-Initalise a predefined crc object for DNP3 Cyclic Redundancy Check
-Info : http://crcmod.sourceforge.net/crcmod.predefined.html
-'''
-def crcDNP(data):
-    c = Crc16Dnp()
-    c.process(data)
-    return c.final().to_bytes(2, "little")
-
-
-def CRC_check(chunk, crc):
-    chunk_crc = crcDNP(chunk)
-    crc = struct.unpack('<H', crc)[0]
-    if crc == chunk_crc:
-        return True, crc
-    else:
-        return False, crc
-
-
-def update_data_chunk_crc(chunk):
-    crc = crcDNP(chunk[:-2])
-    chunk = chunk[:-2] + struct.pack('<H', crc)
-    return chunk
-
-
-def add_CRC_payload(payload):
-    if len(payload) > 18:
-        chunk = payload[:18]
-        chunk = update_data_chunk_crc(chunk)
-        payload = chunk + payload[18:]
-
-    else:
-        chunk = payload[:-2]
-        chunk = update_data_chunk_crc(chunk)
-        payload = chunk
-    return payload
-
 
 applicationFunctionCode = {
     0: "CONFIRM",
@@ -109,22 +65,47 @@ applicationFunctionCode = {
 }
 
 
-class DNP3RequestDataObjects(Packet):
-    fields_desc = [
-        BitField("Obj", 1, 4),
-        BitField("Var", 1, 4),
-        BitField("IndexPref", 1, 4),
-        BitEnumField("QualfierCode", 1, 4, bitState),
-    ]
-
-    def extract_padding(self, p):
-        return "", p
-
-class DNP3Application(Packet):
-    def guess_payload_class(self, payload):
-        return Packet.guess_payload_class(self, payload)
+# FUNCTIONS
+## CRC
+def crcDNP(data):
+    c = Crc16Dnp()
+    c.process(data)
+    return c.final().to_bytes(2, "little")
 
 
+def CRC_check(chunk, crc):
+    chunk_crc = crcDNP(chunk)
+    crc = struct.unpack('<H', crc)[0]
+    if crc == chunk_crc:
+        return True, crc
+    else:
+        return False, crc
+
+
+def update_data_chunk_crc(chunk):
+    crc = crcDNP(chunk[:-2])
+    chunk = chunk[:-2] + struct.pack('<H', crc)
+    return chunk
+
+
+def add_CRC_payload(payload):
+    if len(payload) > 18:
+        chunk = payload[:18]
+        chunk = update_data_chunk_crc(chunk)
+        payload = chunk + payload[18:]
+
+    else:
+        chunk = payload[:-2]
+        chunk = update_data_chunk_crc(chunk)
+        payload = chunk
+    return payload
+
+
+
+# CLASSES
+## DNP3
+### DNP3 Application
+#### DNP3 Application Requests
 class DNP3ApplicationControl(Packet):
     fields_desc = [
         BitEnumField("FIN", 1, 1, bitState),
@@ -137,9 +118,82 @@ class DNP3ApplicationControl(Packet):
     def extract_padding(self, p):
         return "", p
 
+class DNP3ApplicationReadRequest(Packet):
+    name= "DNP3_Application_Read_Request"
 
+    dataClass = {
+        0x01: "Class 0",
+        0x02: "Class 1",
+        0x03: "Class 2",
+        0x04: "Class 3",
+    }
+
+    objectPrefix = {
+        0x00: "Objects Packed without an index prefix",
+        0x01: "Objects prefixed with 1-octet index",
+        0x02: "Objects prefixed with 2-octet index",
+        0x03: "Objects prefixed with 4-octet index",
+        0x04: "Objects prefixed with 1-cotet object size",
+        0x05: "Objects prefixed with 2-cotet object size",
+        0x06: "Objects prefixed with 4-cotet object size",
+        0x07: "Reserved for future use",
+    }
+
+    rangeSpecifier = {
+        0x00: "Range field contains 1-octet start and stop indexes",
+        0x01: "Range field contains 2-octet start and stop indexes",
+        0x02: "Range field contains 4-octet start and stop indexes",
+        0x03: "Range field contains 1-octet start and stop virtual addresses",
+        0x04: "Range field contains 2-octet start and stop virtual addresses",
+        0x05: "Range field contains 4-octet start and stop virtual addresses",
+        0x06: "No range field is used",
+        0x07: "Range field contains 1-octet count of objects",
+        0x08: "Range field contains 2-octet count of objects",
+        0x09: "Range field contains 3-octet count of objects",
+        0x0A: "Reserved for future use",
+        0x0B: "Variable format qualifier, range field contains 1-octet count of objects",
+        0x0C: "Reserved for future use",
+        0x0D: "Reserved for future use",
+        0x0E: "Reserved for future use",
+        0x0F: "Reserved for future use",
+    }
+
+    fields_desc = [
+        ByteField("OBJECT_GROUP", None),
+        BitEnumField("CLASS", None, 8, dataClass),
+        BitField("RESERVED", 0, 1,),
+        BitEnumField("OBJECT_PREFIX_CODE", 0, 3, objectPrefix),
+        BitEnumField("RANGE_SPECIFIER_CODE", 6, 4, rangeSpecifier),
+    ]
+
+    def extract_padding(self, p):
+        return "", p
+
+class DNP3ApplicationRequest(Packet):
+    name = "DNP3_Application_request"
+    fields_desc = [
+        PacketField("Application_control", DNP3ApplicationControl(), DNP3ApplicationControl),
+        BitEnumField("FUNC_CODE", 1, 8, applicationFunctionCode),
+        PacketListField("Read_requests", None, DNP3ApplicationReadRequest),
+    ]
+
+    def mysummary(self):
+        if isinstance(self.underlayer.underlayer, DNP3):
+            return self.underlayer.underlayer.sprintf(DNP3_summary + Transport_summary + Application_Req_summary)
+        if isinstance(self.underlayer, DNP3Transport):
+            return self.underlayer.sprintf(Transport_summary + Application_Req_summary)
+        else:
+            return self.sprintf(Application_Req_summary)
+
+    def post_build(self, pkt, pay):
+        if self.FUNC_CODE is 0x01:
+            for request in self.Read_requests:
+                pay += request.build()
+        return super().post_build(pkt, pay)
+
+#### DNP3 Application Response
 class DNP3ApplicationIIN(Packet):
-    name = "DNP3_Application_response"
+    name = "DNP3_Application_IIN"
     fields_desc = [
         BitEnumField("DEVICE_RESTART", UNSET, 1, bitState),
         BitEnumField("DEVICE_TROUBLE", UNSET, 1, bitState),
@@ -162,7 +216,7 @@ class DNP3ApplicationIIN(Packet):
     def extract_padding(self, p):
         return "", p
 
-class DNP3ApplicationResponse(DNP3Application):
+class DNP3ApplicationResponse(Packet):
     name = "DNP3_Application_response"
     fields_desc = [
         PacketField("Application_control", DNP3ApplicationControl(), DNP3ApplicationControl),
@@ -179,22 +233,7 @@ class DNP3ApplicationResponse(DNP3Application):
         else:
             return self.sprintf(Application_Req_summary)
 
-class DNP3ApplicationRequest(DNP3Application):
-    name = "DNP3_Application_request"
-    fields_desc = [
-        PacketField("Application_control", DNP3ApplicationControl(), DNP3ApplicationControl),
-        BitEnumField("FUNC_CODE", 1, 8, applicationFunctionCode),
-    ]
-
-    def mysummary(self):
-        if isinstance(self.underlayer.underlayer, DNP3):
-            return self.underlayer.underlayer.sprintf(DNP3_summary + Transport_summary + Application_Req_summary)
-        if isinstance(self.underlayer, DNP3Transport):
-            return self.underlayer.sprintf(Transport_summary + Application_Req_summary)
-        else:
-            return self.sprintf(Application_Req_summary)
-
-
+### DNP3 Transport
 class DNP3Transport(Packet):
     name = "DNP3_Transport"
     fields_desc = [
