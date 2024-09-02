@@ -64,6 +64,36 @@ applicationFunctionCode = {
     131: "AUTHENTICATE_RESP",
 }
 
+objectPrefix = {
+    0x00: "Objects Packed without an index prefix",
+    0x01: "Objects prefixed with 1-octet index",
+    0x02: "Objects prefixed with 2-octet index",
+    0x03: "Objects prefixed with 4-octet index",
+    0x04: "Objects prefixed with 1-cotet object size",
+    0x05: "Objects prefixed with 2-cotet object size",
+    0x06: "Objects prefixed with 4-cotet object size",
+    0x07: "Reserved for future use",
+}
+
+rangeSpecifier = {
+    0x00: "Range field contains 1-octet start and stop indexes",
+    0x01: "Range field contains 2-octet start and stop indexes",
+    0x02: "Range field contains 4-octet start and stop indexes",
+    0x03: "Range field contains 1-octet start and stop virtual addresses",
+    0x04: "Range field contains 2-octet start and stop virtual addresses",
+    0x05: "Range field contains 4-octet start and stop virtual addresses",
+    0x06: "No range field is used",
+    0x07: "Range field contains 1-octet count of objects",
+    0x08: "Range field contains 2-octet count of objects",
+    0x09: "Range field contains 4-octet count of objects",
+    0x0A: "Reserved for future use",
+    0x0B: "Variable format qualifier, range field contains 1-octet count of objects",
+    0x0C: "Reserved for future use",
+    0x0D: "Reserved for future use",
+    0x0E: "Reserved for future use",
+    0x0F: "Reserved for future use",
+}
+
 
 # FUNCTIONS
 ## CRC
@@ -71,7 +101,6 @@ def crcDNP(data):
     c = Crc16Dnp()
     c.process(data)
     return c.final().to_bytes(2, "little")
-
 
 def CRC_check(chunk, crc):
     chunk_crc = crcDNP(chunk)
@@ -81,12 +110,10 @@ def CRC_check(chunk, crc):
     else:
         return False, crc
 
-
 def update_data_chunk_crc(chunk):
     crc = crcDNP(chunk[:-2])
     chunk = chunk[:-2] + struct.pack('<H', crc)
     return chunk
-
 
 def add_CRC_payload(payload):
     if len(payload) > 18:
@@ -118,44 +145,14 @@ class DNP3ApplicationControl(Packet):
     def extract_padding(self, p):
         return "", p
 
-class DNP3ApplicationReadRequest(Packet):
-    name= "DNP3_Application_Read_Request"
+class DNP3ApplicationReadRequestObject(Packet):
+    name= "DNP3_Application_Read_Request_Object"
 
     dataClass = {
         0x01: "Class 0",
         0x02: "Class 1",
         0x03: "Class 2",
         0x04: "Class 3",
-    }
-
-    objectPrefix = {
-        0x00: "Objects Packed without an index prefix",
-        0x01: "Objects prefixed with 1-octet index",
-        0x02: "Objects prefixed with 2-octet index",
-        0x03: "Objects prefixed with 4-octet index",
-        0x04: "Objects prefixed with 1-cotet object size",
-        0x05: "Objects prefixed with 2-cotet object size",
-        0x06: "Objects prefixed with 4-cotet object size",
-        0x07: "Reserved for future use",
-    }
-
-    rangeSpecifier = {
-        0x00: "Range field contains 1-octet start and stop indexes",
-        0x01: "Range field contains 2-octet start and stop indexes",
-        0x02: "Range field contains 4-octet start and stop indexes",
-        0x03: "Range field contains 1-octet start and stop virtual addresses",
-        0x04: "Range field contains 2-octet start and stop virtual addresses",
-        0x05: "Range field contains 4-octet start and stop virtual addresses",
-        0x06: "No range field is used",
-        0x07: "Range field contains 1-octet count of objects",
-        0x08: "Range field contains 2-octet count of objects",
-        0x09: "Range field contains 3-octet count of objects",
-        0x0A: "Reserved for future use",
-        0x0B: "Variable format qualifier, range field contains 1-octet count of objects",
-        0x0C: "Reserved for future use",
-        0x0D: "Reserved for future use",
-        0x0E: "Reserved for future use",
-        0x0F: "Reserved for future use",
     }
 
     fields_desc = [
@@ -172,9 +169,9 @@ class DNP3ApplicationReadRequest(Packet):
 class DNP3ApplicationRequest(Packet):
     name = "DNP3_Application_request"
     fields_desc = [
-        PacketField("Application_control", DNP3ApplicationControl(), DNP3ApplicationControl),
+        PacketField("APP_CONTROL", DNP3ApplicationControl(), DNP3ApplicationControl),
         BitEnumField("FUNC_CODE", 1, 8, applicationFunctionCode),
-        PacketListField("Read_requests", None, DNP3ApplicationReadRequest),
+        PacketListField("READ_REQ_OBJ", None, DNP3ApplicationReadRequestObject),
     ]
 
     def mysummary(self):
@@ -216,13 +213,84 @@ class DNP3ApplicationIIN(Packet):
     def extract_padding(self, p):
         return "", p
 
+groupVarImplemented = [
+    [1, 2]
+]
+
+class DNP3ApplicationResponseDataObjectG1V2(Packet):
+    name= "Binary_Input_Point"
+    fields_desc = [
+       BitEnumField("POINT_VALUE", UNSET, 1, bitState), 
+       BitEnumField("RESERVERD", UNSET, 1, bitState), 
+       BitEnumField("CHATTER_FILTER", UNSET, 1, bitState), 
+       BitEnumField("LOCAL_FORCE", UNSET, 1, bitState), 
+       BitEnumField("REMOTE_FORCE", UNSET, 1, bitState), 
+       BitEnumField("COMM_FAIL", UNSET, 1, bitState), 
+       BitEnumField("RESTART", UNSET, 1, bitState), 
+       BitEnumField("ONLINE", UNSET, 1, bitState), 
+    ]
+
+    def extract_padding(self, p):
+        return "", p
+
+class DNP3ApplicationResponseData(Packet):
+    name= "DNP3_Application_Response_Data"
+    fields_desc = [
+        # Standard fields
+        ByteField("GROUP", None),
+        ByteField("VARIATION", None),
+        BitField("RESERVED", 0, 1,),
+        BitEnumField("OBJECT_PREFIX_CODE", 0, 3, objectPrefix),
+        BitEnumField("RANGE_SPECIFIER_CODE", 6, 4, rangeSpecifier),
+        # Conditional fields based on header
+            # Range
+                # Start and stop indexes of various size
+        ConditionalField(MultipleTypeField([
+            [NBytesField("RANGE_START", 0, 1), lambda pkt: pkt.RANGE_SPECIFIER_CODE == 0x00],
+            [NBytesField("RANGE_START", 0, 2), lambda pkt: pkt.RANGE_SPECIFIER_CODE == 0x01],
+            [NBytesField("RANGE_START", 0, 4), lambda pkt: pkt.RANGE_SPECIFIER_CODE == 0x02],
+                    # virtual
+            [NBytesField("RANGE_START", 0, 1), lambda pkt: pkt.RANGE_SPECIFIER_CODE == 0x03],
+            [NBytesField("RANGE_START", 0, 2), lambda pkt: pkt.RANGE_SPECIFIER_CODE == 0x04],
+            [NBytesField("RANGE_START", 0, 4), lambda pkt: pkt.RANGE_SPECIFIER_CODE == 0x05],
+            ], NBytesField("RANGE_START", 0, 1)), lambda pkt: pkt.RANGE_SPECIFIER_CODE in [0x00, 0x01, 0x02, 0x03, 0x04, 0x05]),
+        ConditionalField(MultipleTypeField([
+            [NBytesField("RANGE_STOP", 0, 1), lambda pkt: pkt.RANGE_SPECIFIER_CODE == 0x00],
+            [NBytesField("RANGE_STOP", 0, 2), lambda pkt: pkt.RANGE_SPECIFIER_CODE == 0x01],
+            [NBytesField("RANGE_STOP", 0, 4), lambda pkt: pkt.RANGE_SPECIFIER_CODE == 0x02],
+                    # virtual
+            [NBytesField("RANGE_STOP", 0, 1), lambda pkt: pkt.RANGE_SPECIFIER_CODE == 0x03],
+            [NBytesField("RANGE_STOP", 0, 2), lambda pkt: pkt.RANGE_SPECIFIER_CODE == 0x04],
+            [NBytesField("RANGE_STOP", 0, 4), lambda pkt: pkt.RANGE_SPECIFIER_CODE == 0x05],
+            ], NBytesField("RANGE_STOP", 0, 1)), lambda pkt: pkt.RANGE_SPECIFIER_CODE in [0x00, 0x01, 0x02, 0x03, 0x04, 0x05]),
+                # count of objects
+        ConditionalField(MultipleTypeField([
+            [NBytesField("RANGE_COUNT", 0, 1), lambda pkt: pkt.RANGE_SPECIFIER_CODE == 0x07],
+            [NBytesField("RANGE_COUNT", 0, 2), lambda pkt: pkt.RANGE_SPECIFIER_CODE == 0x08],
+            [NBytesField("RANGE_COUNT", 0, 4), lambda pkt: pkt.RANGE_SPECIFIER_CODE == 0x09],
+                    # variable format, range field 1 octet count
+            [NBytesField("RANGE_COUNT", 0, 1), lambda pkt: pkt.RANGE_SPECIFIER_CODE == 0x0B],
+            ], NBytesField("RAGE_COUNT", 0, 1)), lambda pkt: pkt.RANGE_SPECIFIER_CODE in [0x07, 0x08, 0x09, 0x0B]),
+        # Data Fields
+        #PacketListField("asdf", None, DNP3ApplicationResponseDataObjectG1V2, count_from=lambda pkt: pkt.RANGE_STOP - pkt.RANGE_START + 1)
+         ConditionalField(MultipleTypeField([
+             [PacketListField("BINARY_INPUT_w_FLAGS", None, DNP3ApplicationResponseDataObjectG1V2,
+                      count_from=lambda pkt: pkt.RANGE_STOP - pkt.RANGE_START + 1), 
+                 lambda pkt: pkt.GROUP == 0x01 and pkt.VARIATION == 0x02],
+             ], ByteField("DATA_OBJECT", None)), lambda pkt: [pkt.GROUP, pkt.VARIATION] in groupVarImplemented)
+    ]
+
 class DNP3ApplicationResponse(Packet):
     name = "DNP3_Application_response"
     fields_desc = [
-        PacketField("Application_control", DNP3ApplicationControl(), DNP3ApplicationControl),
+        PacketField("APP_CONTROL", DNP3ApplicationControl(), DNP3ApplicationControl),
         BitEnumField("FUNC_CODE", 1, 8, applicationFunctionCode),
         PacketField("IIN", DNP3ApplicationIIN(), DNP3ApplicationIIN),
+        PacketListField("RESPONSE_OBJ", None, DNP3ApplicationResponseData),
     ]
+
+    def extract_padding(self, p):
+        return "", p
 
     def mysummary(self):
         if isinstance(self.underlayer.underlayer, DNP3):
