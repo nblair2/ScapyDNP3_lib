@@ -183,8 +183,8 @@ class DNP3ApplicationRequest(Packet):
             return self.sprintf(Application_Req_summary)
 
     def post_build(self, pkt, pay):
-        if self.FUNC_CODE is 0x01:
-            for request in self.Read_requests:
+        if self.FUNC_CODE == 0x01:
+            for request in self.READ_REQ_OBJ:
                 pay += request.build()
         return super().post_build(pkt, pay)
 
@@ -270,14 +270,14 @@ class DNP3ApplicationResponseData(Packet):
             [NBytesField("RANGE_COUNT", 0, 4), lambda pkt: pkt.RANGE_SPECIFIER_CODE == 0x09],
                     # variable format, range field 1 octet count
             [NBytesField("RANGE_COUNT", 0, 1), lambda pkt: pkt.RANGE_SPECIFIER_CODE == 0x0B],
-            ], NBytesField("RAGE_COUNT", 0, 1)), lambda pkt: pkt.RANGE_SPECIFIER_CODE in [0x07, 0x08, 0x09, 0x0B]),
+            ], NBytesField("RANGE_COUNT", 0, 1)), lambda pkt: pkt.RANGE_SPECIFIER_CODE in [0x07, 0x08, 0x09, 0x0B]),
         # Data Fields
         #PacketListField("asdf", None, DNP3ApplicationResponseDataObjectG1V2, count_from=lambda pkt: pkt.RANGE_STOP - pkt.RANGE_START + 1)
-         ConditionalField(MultipleTypeField([
-             [PacketListField("BINARY_INPUT_w_FLAGS", None, DNP3ApplicationResponseDataObjectG1V2,
-                      count_from=lambda pkt: pkt.RANGE_STOP - pkt.RANGE_START + 1), 
-                 lambda pkt: pkt.GROUP == 0x01 and pkt.VARIATION == 0x02],
-             ], ByteField("DATA_OBJECT", None)), lambda pkt: [pkt.GROUP, pkt.VARIATION] in groupVarImplemented)
+       #  ConditionalField(MultipleTypeField([
+       #       [PacketListField("BINARY_INPUT_w_FLAGS", None, DNP3ApplicationResponseDataObjectG1V2,
+       #                count_from=lambda pkt: pkt.RANGE_STOP - pkt.RANGE_START + 1), 
+       #           lambda pkt: pkt.GROUP == 0x01 and pkt.VARIATION == 0x02],
+       #       ], ByteField("DATA_OBJECT", None)), lambda pkt: [pkt.GROUP, pkt.VARIATION] in groupVarImplemented)
     ]
 
 class DNP3ApplicationResponse(Packet):
@@ -305,9 +305,9 @@ class DNP3ApplicationResponse(Packet):
 class DNP3Transport(Packet):
     name = "DNP3_Transport"
     fields_desc = [
-        BitEnumField("FIN", None, 1, bitState),
-        BitEnumField("FIR", None, 1, bitState),
-        BitField("SEQUENCE", None, 6),
+        BitEnumField("FIN", 1, 1, bitState),
+        BitEnumField("FIR", 1, 1, bitState),
+        BitField("SEQUENCE", 0, 6),
     ]
 
     def guess_payload_class(self, payload):
@@ -352,8 +352,8 @@ class DNP3HeaderControl(Packet):
     ]
 
     fields_desc = [
-        BitEnumField("DIR", MASTER, 1, stations),  # 9.2.4.1.3.1 DIR bit field
-        BitEnumField("PRM", MASTER, 1,  stations),  # 9.2.4.1.3.2 PRM bit field
+        BitEnumField("DIR", MASTER, 1, bitState),  # 9.2.4.1.3.1 DIR bit field
+        BitEnumField("PRM", MASTER, 1,  bitState),  # 9.2.4.1.3.2 PRM bit field
         ConditionalField(cond_field[0], lambda x:x.PRM == MASTER),
         ConditionalField(cond_field[1], lambda x:x.PRM == MASTER),
         ConditionalField(cond_field[2], lambda x:x.PRM == MASTER),
@@ -370,7 +370,7 @@ class DNP3(Packet):
     name = "DNP3"
     fields_desc = [
         XShortField("START", 0x0564),
-        ByteField("LENGTH", None),
+        ByteField("LENGTH", 32),
         PacketField("CONTROL", None, DNP3HeaderControl),
         LEShortField("DESTINATION", None),
         LEShortField("SOURCE", None),
@@ -415,20 +415,23 @@ class DNP3(Packet):
             # IIN in Application layer and empty Payload
             pay = pay + struct.pack('H', crcDNP(pay))
 
-        if self.LENGTH is None:
+        if self.LENGTH == None:
 
              # Remove length , crc, start octets as part of length
             length = (len(pkt+pay) - ((chunks * 2) + 1 + 2 + 2))
+            print(pkt)
             pkt = pkt[:2] + struct.pack('<B', length) + pkt[3:]
 
         CRC = crcDNP(pkt[:8])  # use only the first 8 octets
 
-        if self.CRC is None:
-            pkt = pkt[:-2] + struct.pack('H', CRC)
+        if self.CRC == None:
+            pkt = pkt[:2] + CRC
+            # pkt = pkt[:-2] + struct.pack('H', CRC)
 
         else:
             if CRC != self.CRC:
-                pkt = pkt[:-2] + struct.pack('H', CRC)
+                pkt = pkt[:2] + CRC
+                # pkt = pkt[:-2] + struct.pack('H', CRC)
 
         self.data_chunks = []
         self.data_chunks_crc = []
@@ -461,4 +464,3 @@ bind_layers(TCP, DNP3, dport=dnp3_port)
 bind_layers(TCP, DNP3, sport=dnp3_port)
 bind_layers(UDP, DNP3, dport=dnp3_port)
 bind_layers(UDP, DNP3, sport=dnp3_port)
-
